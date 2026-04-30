@@ -3,6 +3,7 @@ from biogeme import models
 from biogeme.expressions import log, exp, Variable, MonteCarlo, exp, bioMultSum
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import timedelta
 
 
 # This function estimates the MNL model and returns the estimation results
@@ -124,15 +125,85 @@ def estimate_panel_mxl(V,AV,CHOICE,obs_per_ind,biodata_wide,model_name, num_draw
     results = biogeme.estimate()
     return results
 
+def is_mxl(stats) -> bool:
+    return "Types of draws" in stats
+
+
+def get_stat(stats, key):
+    item = stats[key]
+    return item.value if hasattr(item, "value") else item[0]
+
+
+def make_stat_rows(stats, row_specs):
+    return [
+        (label, get_stat(stats, key), fmt)
+        for label, key, fmt in row_specs
+        if key in stats]
+
+
+def format_value(value, fmt, width=12):
+    if fmt == "left_s":
+        return str(value)
+
+    if fmt == "s":
+        return f"{str(value):>{width}}"
+
+    if fmt == "d":
+        return f"{int(value):>{width}d}"
+
+    return f"{float(value):>{width}{fmt}}"
+
+
 def print_results(results):
     
     # Print the estimation statistics
-    print(f'\n')
-    if len(results.short_summary().strip().split('\n')) <=8:
-        print(results.print_general_statistics())
-    else:
-        print(results.short_summary())
+    opt = results.data.optimizationMessages
+    stats = results.get_general_statistics()
 
+    summary_rows = [
+        ("Cause of termination", opt["Cause of termination"], "left_s"),
+        ("Number of iterations", opt["Number of iterations"], "d"),
+        ("Estimation time", timedelta(seconds=int(opt["Optimization time"].total_seconds())),"s",)]
+
+    if not is_mxl(stats):
+            mnl_row_specs = [
+                ("Number of estimated parameters", "Number of estimated parameters", "d"),
+                ("Sample size",                    "Sample size", "d"),
+                ("Excluded observations",          "Excluded observations", "d"),
+                ("Null log likelihood",            "Null log likelihood", ".2f"),
+                ("Init log likelihood",            "Init log likelihood", ".2f"),
+                ("Final log likelihood",           "Final log likelihood", ".2f"),
+                ("Rho-square for the null model",  "Rho-square for the null model", ".3f"),
+                ("Bayesian Information Criterion", "Bayesian Information Criterion", ".2f"),
+                ("Number of threads",              "Nbr of threads", "d"),
+            ]
+            stat_rows = make_stat_rows(stats, mnl_row_specs)
+
+    else:
+        mxl_row_specs = [
+            ("Number of estimated parameters", "Number of estimated parameters", "d"),
+            ("Number of individuals",          "Sample size", "d"),
+            ("Excluded observations",          "Excluded observations", "d"),
+            ("Null log likelihood",            "Null log likelihood", ".2f"),
+            ("Init log likelihood",            "Init log likelihood", ".2f"),
+            ("Final log likelihood",           "Final log likelihood", ".2f"),
+            ("Rho-square for the null model",  "Rho-square for the null model", ".3f"),
+            ("Bayesian Information Criterion", "Bayesian Information Criterion", ".2f"),
+            ("Number of threads",              "Nbr of threads", "d"),
+            ("Number of draws",                "Number of draws", "d"),
+            ("Types of draws",                 "Types of draws", "left_s"),
+        ]
+        stat_rows = make_stat_rows(stats, mxl_row_specs)
+
+    rows = summary_rows + stat_rows
+    label_width = max(len(label) for label, _, _ in rows)
+
+    print()
+    print("Estimation finished")
+
+    for label, value, fmt in rows:
+        print(f"{label:<{label_width}} : {format_value(value, fmt)}")
+        
     # Get the model parameters in a pandas table and  print it
     beta_hat = results.get_estimated_parameters()
     
@@ -140,6 +211,7 @@ def print_results(results):
     beta_hat = beta_hat.round(4)
     beta_hat['Rob. t-test']  = beta_hat['Rob. t-test'].round(2)
     beta_hat['Rob. p-value'] = beta_hat['Rob. p-value'].round(2)
+    print()
     print(beta_hat)
 
 def get_beta_param(params, name):
